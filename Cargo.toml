@@ -21,7 +21,7 @@ name = "sys_info_rs"
 path = "src/lib.rs"
 
 [[bin]]
-name = "main"
+name = "sys-inf-rs"
 path = "src/main.rs"
 doc = false
 

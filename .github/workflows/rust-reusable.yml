@@ -1,0 +1,43 @@
+name: Rust Reusable Workflow called from matrix
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        description: 'What OS should we run'
+        required: true
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  reusable-build-steps:
+    if: |
+        contains(inputs.os,'linux') ||
+        contains(inputs.os,'windows')
+
+    runs-on: ${{ inputs.os }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build --lib
+        run: cargo build --lib --verbose
+      - name: Run tests --lib
+        run: cargo test --lib --verbose
+      - name: Run clippy --lib
+        run: cargo clippy --lib
+
+  linux-only-build-steps:
+    if: |
+        contains(inputs.os,'linux')
+
+    runs-on: ${{ inputs.os }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build example main
+        run: cargo build --release --verbose
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: assets-for-download
+          path: target/release/sys-info-rs
