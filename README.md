@@ -2,7 +2,7 @@
 
 * Cloned from - https://github.com/FillZpp/sys-info-rs.git
 
-[![Build Status](https://travis-ci.org/FillZpp/sys-info-rs.svg?branch=master)](https://github.com/diepes/sys-info-rs.git)
+[![Build Status](https://github.com/diepes/sys-info-rs/actions/workflows/rust.yml/badge.svg)](https://github.com/diepes/sys-info-rs/actions/workflows/rust.yml)
 
 Get system information in Rust.
 

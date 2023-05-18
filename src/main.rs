@@ -2,7 +2,7 @@ extern crate sys_info_rs;
 
 fn main() {
     println!("Hello, world!");
-    let info: sysinfo = sysinfo {
+    let info: SysInfo = SysInfo {
         loadavg: sys_info_rs::loadavg().expect("Err getting loadavg"),
         disk_info: sys_info_rs::disk_info().expect("Err getting disk info"),
         mem_info: sys_info_rs::mem_info().expect("Err getting mem_info"),
@@ -18,7 +18,7 @@ fn main() {
 }
 
 #[derive(Debug, serde::Deserialize)]
-struct sysinfo {
+struct SysInfo {
     loadavg: sys_info_rs::LoadAvg,
     disk_info: sys_info_rs::DiskInfo,
     mem_info: sys_info_rs::MemInfo,
