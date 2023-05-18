@@ -40,8 +40,21 @@ jobs:
         run: cargo build --release --verbose
       - name: Build main.rs - sys-inf-rs with static glibc
         run: RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --target x86_64-unknown-linux-gnu --verbose
-      - name: Upload Artifacts target
+
+      - name: Artifact target dir
         uses: actions/upload-artifact@v3
         with:
-          name: assets-for-download
+          name: sys-inf-rs-target-dir
           path: target/
+
+      - name: Artifact static x86_64 target/x86_64-unknown-linux-gnu/release/sys-inf-rs
+        uses: actions/upload-artifact@v3
+        with:
+          name: sys-info-rs-static
+          path: target/x86_64-unknown-linux-gnu/release/sys-inf-rs
+
+      - name: Artifact target/release/sys-inf-rs
+        uses: actions/upload-artifact@v3
+        with:
+          name: sys-inf-rs
+          path: target/release/sys-inf-rs
