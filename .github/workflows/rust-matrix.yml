@@ -16,6 +16,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
-    uses: ././github/workflows/rust-reusable.yml
+    uses: ./.github/workflows/rust-reusable.yml
+
     with:
-      ifos: ${{ matrix.os }}
+      os: ${{ matrix.os }}
