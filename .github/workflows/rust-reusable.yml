@@ -36,10 +36,12 @@ jobs:
     runs-on: ${{ inputs.os }}
     steps:
       - uses: actions/checkout@v3
-      - name: Build example main - sys-inf-rs with static glibc
+      - name: Build main.rs - sys-inf-rs
+        run: cargo build --release --verbose
+      - name: Build main.rs - sys-inf-rs with static glibc
         run: RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --target x86_64-unknown-linux-gnu --verbose
-      - name: Upload Artifact
+      - name: Upload Artifacts target
         uses: actions/upload-artifact@v3
         with:
           name: assets-for-download
-          path: target/release/sys-inf-rs
+          path: target/

@@ -25,6 +25,10 @@ name = "sys-inf-rs"
 path = "src/main.rs"
 doc = false
 
+# [build]
+# rustflags = ["-C", "target-feature=+crt-static"]
+# target = "x86_64-unknown-linux-gnu"
+
 [build-dependencies]
 cc = "1"
 
