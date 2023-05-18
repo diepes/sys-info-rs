@@ -15,6 +15,7 @@ jobs:
   reusable-build-steps:
     if: |
         contains(inputs.os,'linux') ||
+        contains(inputs.os,'ubuntu') ||
         contains(inputs.os,'windows')
 
     runs-on: ${{ inputs.os }}
@@ -29,7 +30,8 @@ jobs:
 
   linux-only-build-steps:
     if: |
-        contains(inputs.os,'linux')
+        contains(inputs.os,'linux') ||
+        contains(inputs.os,'ubuntu')
 
     runs-on: ${{ inputs.os }}
     steps:
