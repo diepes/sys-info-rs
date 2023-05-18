@@ -14,3 +14,7 @@ target/
 
 .idea/
 *.code-workspace
+
+# Editors and scanners
+.dccache
+.vscode

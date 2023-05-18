@@ -6,6 +6,11 @@
 //!
 
 extern crate libc;
+extern crate serde;
+
+use serde::{Deserialize, Serialize};
+
+
 
 use std::ffi;
 use std::fmt;
@@ -39,7 +44,7 @@ static OS_KERN_BOOTTIME: libc::c_int = 21;
 
 /// System load average value.
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct LoadAvg {
     /// Average load within one minutes.
     pub one: f64,
@@ -51,7 +56,7 @@ pub struct LoadAvg {
 
 /// System memory information.
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct MemInfo {
     /// Total physical memory.
     pub total: u64,
@@ -70,7 +75,7 @@ pub struct MemInfo {
 ///
 /// See [man os-release](https://www.freedesktop.org/software/systemd/man/os-release.html).
 #[derive(Debug)]
-#[derive(Default)]
+#[derive(Default, Deserialize, Serialize)]
 pub struct LinuxOSReleaseInfo {
     /// A lower-case string (no spaces or other characters outside of 0–9, a–z, ".", "_" and "-")
     /// identifying the operating system, excluding any version information and suitable for
@@ -275,7 +280,7 @@ impl LinuxOSReleaseInfo {
 
 /// Disk information.
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Deserialize,  Serialize)]
 pub struct DiskInfo {
     pub total: u64,
     pub free: u64,
