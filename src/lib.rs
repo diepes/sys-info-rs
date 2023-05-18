@@ -524,7 +524,7 @@ pub fn os_release() -> Result<String, Error> {
     {
         unsafe {
             let rp = get_os_release() as *const c_char;
-            if rp == std::ptr::null() {
+            if rp.is_null() {
                 Err(Error::Unknown)
             } else {
                 let typ = ffi::CStr::from_ptr(rp).to_bytes();
@@ -627,7 +627,7 @@ fn parse_line_for_linux_os_release(l: String) -> Option<(String, String)> {
         trim_value.remove(len - 1);
     }
 
-    return Some((String::from(words[0]), trim_value));
+    Some((String::from(words[0]), trim_value))
 }
 
 /// Get cpu num quantity.

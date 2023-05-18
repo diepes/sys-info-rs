@@ -25,5 +25,5 @@ jobs:
         run: cargo build --lib --verbose
       - name: Run tests --lib
         run: cargo test --lib --verbose
-      - run: rustup component add clippy rustfmt
-      - run: cargo clippy
+      - name: Run clippy --lib
+        run: cargo clippy --lib
