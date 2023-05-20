@@ -9,7 +9,7 @@ fn main() {
     println!("load: {} {} {}", load.one, load.five, load.fifteen);
     let mem = mem_info().unwrap();
     println!("mem: total {} KB, free {} KB, avail {} KB, buffers {} KB, cached {} KB",
-             mem.total, mem.free, mem.avail, mem.buffers, mem.cached);
+            mem.total, mem.free, mem.avail, mem.buffers, mem.cached);
     println!("swap: total {} KB, free {} KB", mem.swap_total, mem.swap_free);
     #[cfg(not(target_os = "solaris"))] {
         let disk = disk_info().unwrap();
