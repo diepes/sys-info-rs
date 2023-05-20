@@ -1,78 +1,24 @@
 //! #Introduction
 //! This crate focuses on geting system information.
 //!
-//! For now it supports Linux, Mac OS X and Windows.
-//! And now it can get information of kernel/cpu/memory/disk/load/hostname and so on.
+//! For now it supports Linux, Mac OS X.
+//! And now it can get information of cpu/memory/disk/load/hostname.
 //!
 
-extern crate libc;
+mod util;
+extern crate nix;
+
 extern crate serde;
 
 use serde::{Deserialize, Serialize};
 
-use std::ffi;
 use std::fmt;
 use std::fs::File;
-use std::io::{self, Read};
-#[cfg(any(
-    target_os = "windows",
-    target_vendor = "apple",
-    target_os = "freebsd",
-    target_os = "openbsd",
-    target_os = "netbsd"
-))]
-use std::os::raw::c_char;
-#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "haiku")))]
-use std::os::raw::{c_double, c_int};
+use std::io::{self, BufRead, Read};
 
-#[cfg(any(
-    target_vendor = "apple",
-    target_os = "freebsd",
-    target_os = "openbsd",
-    target_os = "netbsd"
-))]
-use libc::sysctl;
-#[cfg(not(target_os = "windows"))]
-use libc::timeval;
-#[cfg(target_os = "linux")]
 use std::collections::HashMap;
-#[cfg(any(
-    target_vendor = "apple",
-    target_os = "freebsd",
-    target_os = "openbsd",
-    target_os = "netbsd"
-))]
-use std::mem::size_of_val;
-#[cfg(any(
-    target_vendor = "apple",
-    target_os = "freebsd",
-    target_os = "openbsd",
-    target_os = "netbsd"
-))]
-use std::ptr::null_mut;
-#[cfg(any(target_os = "solaris", target_os = "illumos"))]
-use std::time::SystemTime;
-
-#[cfg(any(target_os = "solaris", target_os = "illumos"))]
-mod kstat;
-
-#[cfg(any(
-    target_vendor = "apple",
-    target_os = "freebsd",
-    target_os = "openbsd",
-    target_os = "netbsd"
-))]
-static OS_CTL_KERN: libc::c_int = 1;
-#[cfg(any(
-    target_vendor = "apple",
-    target_os = "freebsd",
-    target_os = "openbsd",
-    target_os = "netbsd"
-))]
-static OS_KERN_BOOTTIME: libc::c_int = 21;
 
 /// System load average value.
-#[repr(C)]
 #[derive(Debug, Deserialize, Serialize)]
 pub struct LoadAvg {
     /// Average load within one minutes.
@@ -84,7 +30,6 @@ pub struct LoadAvg {
 }
 
 /// System memory information.
-#[repr(C)]
 #[derive(Debug, Deserialize, Serialize)]
 pub struct MemInfo {
     /// Total physical memory.
@@ -100,220 +45,15 @@ pub struct MemInfo {
     pub swap_free: u64,
 }
 
-/// The os release info of Linux.
-///
-/// See [man os-release](https://www.freedesktop.org/software/systemd/man/os-release.html).
-#[derive(Debug, Default, Deserialize, Serialize)]
-pub struct LinuxOSReleaseInfo {
-    /// A lower-case string (no spaces or other characters outside of 0–9, a–z, ".", "_" and "-")
-    /// identifying the operating system, excluding any version information and suitable for
-    /// processing by scripts or usage in generated filenames.
-    ///
-    /// Note that we don't verify that the string is lower-case and can be used in file-names. If
-    /// the /etc/os-release file has an invalid value, you will get this value.
-    ///
-    /// If not set, defaults to "ID=linux". Use `self.id()` to fallback to the default.
-    ///
-    /// Example: "fedora" or "debian".
-    pub id: Option<String>,
-
-    /// A space-separated list of operating system identifiers in the same syntax as the ID=
-    /// setting. It should list identifiers of operating systems that are closely related to the
-    /// local operating system in regards to packaging and programming interfaces, for example
-    /// listing one or more OS identifiers the local OS is a derivative from. An OS should
-    /// generally only list other OS identifiers it itself is a derivative of, and not any OSes
-    /// that are derived from it, though symmetric relationships are possible. Build scripts and
-    /// similar should check this variable if they need to identify the local operating system and
-    /// the value of ID= is not recognized. Operating systems should be listed in order of how
-    /// closely the local operating system relates to the listed ones, starting with the closest.
-    ///
-    /// This field is optional.
-    ///
-    /// Example: for an operating system with `ID=centos`, an assignment of `ID_LIKE="rhel fedora"`
-    /// would be appropriate. For an operating system with `ID=ubuntu`, an assignment of
-    /// `ID_LIKE=debian` is appropriate.
-    pub id_like: Option<String>,
-
-    /// A string identifying the operating system, without a version component, and suitable for
-    /// presentation to the user.
-    ///
-    /// If not set, defaults to "NAME=Linux".Use `self.id()` to fallback to the default.
-    ///
-    /// Example: "Fedora" or "Debian GNU/Linux".
-    pub name: Option<String>,
-
-    /// A pretty operating system name in a format suitable for presentation to the user. May or
-    /// may not contain a release code name or OS version of some kind, as suitable.
-    ///
-    /// If not set, defaults to "Linux". Use `self.id()` to fallback to the default.
-    ///
-    /// Example: "Fedora 17 (Beefy Miracle)".
-    pub pretty_name: Option<String>,
-
-    /// A string identifying the operating system version, excluding any OS name information,
-    /// possibly including a release code name, and suitable for presentation to the user.
-    ///
-    /// This field is optional.
-    ///
-    /// Example: "17" or "17 (Beefy Miracle)"
-    pub version: Option<String>,
-
-    /// A lower-case string (mostly numeric, no spaces or other characters outside of 0–9, a–z,
-    /// ".", "_" and "-") identifying the operating system version, excluding any OS name
-    /// information or release code name, and suitable for processing by scripts or usage in
-    /// generated filenames.
-    ///
-    /// This field is optional.
-    ///
-    /// Example: "17" or "11.04".
-    pub version_id: Option<String>,
-
-    /// A lower-case string (no spaces or other characters outside of 0–9, a–z, ".", "_" and "-")
-    /// identifying the operating system release code name, excluding any OS name information or
-    /// release version, and suitable for processing by scripts or usage in generated filenames.
-    ///
-    /// This field is optional and may not be implemented on all systems.
-    ///
-    /// Examples: "buster", "xenial".
-    pub version_codename: Option<String>,
-
-    /// A suggested presentation color when showing the OS name on the console. This should be
-    /// specified as string suitable for inclusion in the ESC [ m ANSI/ECMA-48 escape code for
-    /// setting graphical rendition.
-    ///
-    /// This field is optional.
-    ///
-    /// Example: "0;31" for red, "1;34" for light blue, or "0;38;2;60;110;180" for Fedora blue.
-    pub ansi_color: Option<String>,
-
-    /// A string, specifying the name of an icon as defined by freedesktop.org Icon Theme
-    /// Specification. This can be used by graphical applications to display an operating
-    /// system's or distributor's logo.
-    ///
-    /// This field is optional and may not necessarily be implemented on all systems.
-    ///
-    /// Examples: "LOGO=fedora-logo", "LOGO=distributor-logo-opensuse".
-    pub logo: Option<String>,
-
-    /// A CPE name for the operating system, in URI binding syntax, following the Common Platform
-    /// Enumeration Specification as proposed by the NIST.
-    ///
-    /// This field is optional.
-    ///
-    /// Example: "cpe:/o:fedoraproject:fedora:17".
-    pub cpe_name: Option<String>,
-
-    /// A string uniquely identifying the system image used as the origin for a distribution (it is
-    /// not updated with system updates). The field can be identical between different VERSION_IDs
-    /// as BUILD_ID is an only a unique identifier to a specific version. Distributions that
-    /// release each update as a new version would only need to use VERSION_ID as each build is
-    /// already distinct based on the VERSION_ID.
-    ///
-    /// This field is optional.
-    ///
-    /// Example: "2013-03-20.3" or "BUILD_ID=201303203".
-    pub build_id: Option<String>,
-
-    /// A string identifying a specific variant or edition of the operating system suitable for
-    /// presentation to the user. This field may be used to inform the user that the configuration
-    /// of this system is subject to a specific divergent set of rules or default configuration
-    /// settings.
-    ///
-    /// This field is optional and may not be implemented on all systems.
-    ///
-    /// Examples: "Server Edition", "Smart Refrigerator Edition".
-    ///
-    /// Note: this field is for display purposes only. The VARIANT_ID field should be used for
-    /// making programmatic decisions.
-    pub variant: Option<String>,
-
-    /// A lower-case string (no spaces or other characters outside of 0–9, a–z, ".", "_" and "-"),
-    /// identifying a specific variant or edition of the operating system. This may be interpreted
-    /// by other packages in order to determine a divergent default configuration.
-    ///
-    /// This field is optional and may not be implemented on all systems.
-    ///
-    /// Examples: "server", "embedded".
-    pub variant_id: Option<String>,
-
-    /// HOME_URL= should refer to the homepage of the operating system, or alternatively some homepage of
-    /// the specific version of the operating system.
-    ///
-    /// These URLs are intended to be exposed in "About this system" UIs behind links with captions
-    /// such as "About this Operating System", "Obtain Support", "Report a Bug", or "Privacy
-    /// Policy". The values should be in RFC3986 format, and should be "http:" or "https:" URLs,
-    /// and possibly "mailto:" or "tel:". Only one URL shall be listed in each setting. If multiple
-    /// resources need to be referenced, it is recommended to provide an online landing page
-    /// linking all available resources.
-    ///
-    /// Example: "https://fedoraproject.org/".
-    pub home_url: Option<String>,
-
-    /// DOCUMENTATION_URL= should refer to the main documentation page for this operating system.
-    ///
-    /// See also `home_url`.
-    pub documentation_url: Option<String>,
-
-    /// SUPPORT_URL= should refer to the main support page for the operating system, if there is
-    /// any. This is primarily intended for operating systems which vendors provide support for.
-    ///
-    /// See also `home_url`.
-    pub support_url: Option<String>,
-
-    /// BUG_REPORT_URL= should refer to the main bug reporting page for the operating system, if
-    /// there is any. This is primarily intended for operating systems that rely on community QA.
-    ///
-    /// Example: "https://bugzilla.redhat.com/".
-    ///
-    /// See also `home_url`.
-    pub bug_report_url: Option<String>,
-
-    /// PRIVACY_POLICY_URL= should refer to the main privacy policy page for the operating system,
-    /// if there is any. These settings are optional, and providing only some of these settings is
-    /// common.
-    ///
-    /// See also `home_url`.
-    pub privacy_policy_url: Option<String>,
+fn get_cpu_speed() -> u64 {
+    4
 }
 
-macro_rules! os_release_defaults {
-    (
-        $(
-            $(#[$meta:meta])*
-            $vis:vis fn $field:ident => $default:literal
-        )*
-    ) => {
-        $(
-            $(#[$meta])*
-            $vis fn $field(&self) -> &str {
-                match self.$field.as_ref() {
-                    Some(value) => value,
-                    None => $default,
-                }
-            }
-        )*
-    }
-}
-
-impl LinuxOSReleaseInfo {
-    os_release_defaults!(
-        /// Returns the value of `self.id` or, if `None`, "linux" (the default value).
-        pub fn id => "linux"
-        /// Returns the value of `self.name` or, if `None`, "Linux" (the default value).
-        pub fn name => "Linux"
-        /// Returns the value of `self.pretty_name` or, if `None`, "Linux" (the default value).
-        pub fn pretty_name => "Linux"
-    );
-}
-
-/// Disk information.
-#[repr(C)]
 #[derive(Debug, Deserialize, Serialize)]
-pub struct DiskInfo {
-    pub total: u64,
-    pub free: u64,
+pub struct TimeVal {
+    pub tv_sec: u64,
+    pub tv_usec: u64,
 }
-
 /// Error types
 #[derive(Debug)]
 pub enum Error {
@@ -383,70 +123,6 @@ impl From<Box<dyn std::error::Error>> for Error {
     }
 }
 
-extern "C" {
-    #[cfg(any(target_vendor = "apple", target_os = "windows"))]
-    fn get_os_type() -> *const i8;
-    #[cfg(any(
-        target_vendor = "apple",
-        target_os = "windows",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd"
-    ))]
-    fn get_os_release() -> *const i8;
-
-    #[cfg(all(
-        not(any(
-            target_os = "solaris",
-            target_os = "illumos",
-            target_os = "freebsd",
-            target_os = "openbsd",
-            target_os = "netbsd"
-        )),
-        any(unix, windows)
-    ))]
-    fn get_cpu_num() -> u32;
-    #[cfg(any(
-        all(
-            target_vendor = "apple",
-            not(any(target_arch = "aarch64", target_arch = "arm"))
-        ),
-        target_os = "windows",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd",
-        target_os = "haiku"
-    ))]
-    fn get_cpu_speed() -> u64;
-
-    #[cfg(target_os = "windows")]
-    fn get_loadavg() -> LoadAvg;
-    #[cfg(any(
-        target_vendor = "apple",
-        target_os = "windows",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd",
-        target_os = "haiku"
-    ))]
-    fn get_proc_total() -> u64;
-
-    #[cfg(any(target_vendor = "apple", target_os = "windows", target_os = "haiku"))]
-    fn get_mem_info() -> MemInfo;
-    #[cfg(any(target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))]
-    fn get_mem_info_bsd(mi: &mut MemInfo) -> i32;
-
-    #[cfg(any(
-        target_os = "linux",
-        target_vendor = "apple",
-        target_os = "windows",
-        target_os = "haiku"
-    ))]
-    fn get_disk_info() -> DiskInfo;
-    #[cfg(any(target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))]
-    fn get_disk_info_bsd(di: &mut DiskInfo) -> i32;
-}
-
 /// Get operation system type.
 ///
 /// Such as "Linux", "Darwin", "Windows".
@@ -458,46 +134,8 @@ pub fn os_type() -> Result<String, Error> {
         s.pop(); // pop '\n'
         Ok(s)
     }
-    #[cfg(any(target_vendor = "apple", target_os = "windows"))]
-    {
-        let typ = unsafe { ffi::CStr::from_ptr(get_os_type() as *const c_char).to_bytes() };
-        Ok(String::from_utf8_lossy(typ).into_owned())
-    }
-    #[cfg(target_os = "solaris")]
-    {
-        Ok("solaris".to_string())
-    }
-    #[cfg(target_os = "illumos")]
-    {
-        Ok("illumos".to_string())
-    }
-    #[cfg(target_os = "freebsd")]
-    {
-        Ok("freebsd".to_string())
-    }
-    #[cfg(target_os = "openbsd")]
-    {
-        Ok("openbsd".to_string())
-    }
-    #[cfg(target_os = "netbsd")]
-    {
-        Ok("netbsd".to_string())
-    }
-    #[cfg(target_os = "haiku")]
-    {
-        Ok("haiku".to_string())
-    }
-    #[cfg(not(any(
-        target_os = "linux",
-        target_vendor = "apple",
-        target_os = "windows",
-        target_os = "solaris",
-        target_os = "illumos",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd",
-        target_os = "haiku"
-    )))]
+
+    #[cfg(not(any(target_os = "linux",)))]
     {
         Err(Error::UnsupportedSystem)
     }
@@ -514,169 +152,15 @@ pub fn os_release() -> Result<String, Error> {
         s.pop(); // pop '\n'
         Ok(s)
     }
-    #[cfg(any(
-        target_vendor = "apple",
-        target_os = "windows",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd"
-    ))]
-    {
-        unsafe {
-            let rp = get_os_release() as *const c_char;
-            if rp.is_null() {
-                Err(Error::Unknown)
-            } else {
-                let typ = ffi::CStr::from_ptr(rp).to_bytes();
-                Ok(String::from_utf8_lossy(typ).into_owned())
-            }
-        }
-    }
-    #[cfg(any(target_os = "solaris", target_os = "illumos", target_os = "haiku"))]
-    {
-        let release: Option<String> = unsafe {
-            let mut name: libc::utsname = std::mem::zeroed();
-            if libc::uname(&mut name) < 0 {
-                None
-            } else {
-                let cstr = std::ffi::CStr::from_ptr(name.release.as_mut_ptr());
-                Some(cstr.to_string_lossy().to_string())
-            }
-        };
-        match release {
-            None => Err(Error::Unknown),
-            Some(release) => Ok(release),
-        }
-    }
-    #[cfg(not(any(
-        target_os = "linux",
-        target_vendor = "apple",
-        target_os = "windows",
-        target_os = "solaris",
-        target_os = "illumos",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd",
-        target_os = "haiku"
-    )))]
+
+    #[cfg(not(any(target_os = "linux",)))]
     {
         Err(Error::UnsupportedSystem)
     }
 }
-
-/// Get the os release note of Linux
-///
-/// Information in /etc/os-release, such as name and version of distribution.
-///
-/// See `LinuxOSReleaseInfo` for more documentation.
-pub fn linux_os_release() -> Result<LinuxOSReleaseInfo, Error> {
-    if !cfg!(target_os = "linux") {
-        return Err(Error::UnsupportedSystem);
-    }
-
-    let mut s = String::new();
-    File::open("/etc/os-release")?.read_to_string(&mut s)?;
-
-    let mut info: LinuxOSReleaseInfo = Default::default();
-    for l in s.split('\n') {
-        match parse_line_for_linux_os_release(l.trim().to_string()) {
-            Some((key, value)) => match (key.as_ref(), value) {
-                ("ID", val) => info.id = Some(val),
-                ("ID_LIKE", val) => info.id_like = Some(val),
-                ("NAME", val) => info.name = Some(val),
-                ("PRETTY_NAME", val) => info.pretty_name = Some(val),
-
-                ("VERSION", val) => info.version = Some(val),
-                ("VERSION_ID", val) => info.version_id = Some(val),
-                ("VERSION_CODENAME", val) => info.version_codename = Some(val),
-
-                ("ANSI_COLOR", val) => info.ansi_color = Some(val),
-                ("LOGO", val) => info.logo = Some(val),
-
-                ("CPE_NAME", val) => info.cpe_name = Some(val),
-                ("BUILD_ID", val) => info.build_id = Some(val),
-                ("VARIANT", val) => info.variant = Some(val),
-                ("VARIANT_ID", val) => info.variant_id = Some(val),
-
-                ("HOME_URL", val) => info.home_url = Some(val),
-                ("BUG_REPORT_URL", val) => info.bug_report_url = Some(val),
-                ("SUPPORT_URL", val) => info.support_url = Some(val),
-                ("DOCUMENTATION_URL", val) => info.documentation_url = Some(val),
-                ("PRIVACY_POLICY_URL", val) => info.privacy_policy_url = Some(val),
-                _ => {}
-            },
-            None => {}
-        }
-    }
-
-    Ok(info)
-}
-
-fn parse_line_for_linux_os_release(l: String) -> Option<(String, String)> {
-    let words: Vec<&str> = l.splitn(2, '=').collect();
-    if words.len() < 2 {
-        return None;
-    }
-    let mut trim_value = String::from(words[1]);
-
-    if trim_value.starts_with('"') {
-        trim_value.remove(0);
-    }
-    if trim_value.ends_with('"') {
-        let len = trim_value.len();
-        trim_value.remove(len - 1);
-    }
-
-    Some((String::from(words[0]), trim_value))
-}
-
-/// Get cpu num quantity.
-///
-/// Notice, it returns the logical cpu quantity.
-pub fn cpu_num() -> Result<u32, Error> {
-    #[cfg(any(
-        target_os = "solaris",
-        target_os = "illumos",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd"
-    ))]
-    {
-        let ret = unsafe { libc::sysconf(libc::_SC_NPROCESSORS_ONLN) };
-        if ret < 1 || ret as i64 > std::u32::MAX as i64 {
-            Err(Error::IO(io::Error::last_os_error()))
-        } else {
-            Ok(ret as u32)
-        }
-    }
-    #[cfg(all(
-        not(any(
-            target_os = "solaris",
-            target_os = "illumos",
-            target_os = "freebsd",
-            target_os = "openbsd",
-            target_os = "netbsd"
-        )),
-        any(unix, windows)
-    ))]
-    {
-        unsafe { Ok(get_cpu_num()) }
-    }
-    #[cfg(not(any(target_os = "solaris", target_os = "illumos", unix, windows)))]
-    {
-        Err(Error::UnsupportedSystem)
-    }
-}
-
-/// Get cpu speed.
 ///
 /// Such as 2500, that is 2500 MHz.
 pub fn cpu_speed() -> Result<u64, Error> {
-    #[cfg(any(target_os = "solaris", target_os = "illumos"))]
-    {
-        Ok(kstat::cpu_mhz()?)
-    }
-    #[cfg(target_os = "linux")]
     {
         // /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_cur_freq
         let mut s = String::new();
@@ -695,55 +179,19 @@ pub fn cpu_speed() -> Result<u64, Error> {
             .map(|speed| speed as u64)
             .ok_or(Error::Unknown)
     }
-    #[cfg(any(
-        all(
-            target_vendor = "apple",
-            not(any(target_arch = "aarch64", target_arch = "arm"))
-        ),
-        target_os = "windows",
-        target_os = "haiku"
-    ))]
-    {
-        unsafe { Ok(get_cpu_speed()) }
-    }
-    #[cfg(any(target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))]
-    {
-        let res: u64 = unsafe { get_cpu_speed() };
-        match res {
-            0 => Err(Error::IO(io::Error::last_os_error())),
-            _ => Ok(res),
-        }
-    }
-    #[cfg(not(any(
-        target_os = "solaris",
-        target_os = "illumos",
-        target_os = "linux",
-        all(
-            target_vendor = "apple",
-            not(any(target_arch = "aarch64", target_arch = "arm"))
-        ),
-        target_os = "windows",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd",
-        target_os = "haiku"
-    )))]
-    {
-        Err(Error::UnsupportedSystem)
-    }
 }
 
 /// Get system load average value.
 ///
 /// Notice, on windows, one/five/fifteen of the LoadAvg returned are the current load.
 pub fn loadavg() -> Result<LoadAvg, Error> {
-    #[cfg(target_os = "linux")]
     {
         let mut s = String::new();
         File::open("/proc/loadavg")?.read_to_string(&mut s)?;
         let loads = s
             .trim()
-            .split(' ')
+            //.split(' ')
+            .split_whitespace()
             .take(3)
             .map(|val| val.parse::<f64>().unwrap())
             .collect::<Vec<f64>>();
@@ -753,52 +201,10 @@ pub fn loadavg() -> Result<LoadAvg, Error> {
             fifteen: loads[2],
         })
     }
-    #[cfg(any(
-        target_os = "solaris",
-        target_os = "illumos",
-        target_vendor = "apple",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd"
-    ))]
-    {
-        let mut l: [c_double; 3] = [0f64; 3];
-        if unsafe { libc::getloadavg(l.as_mut_ptr(), l.len() as c_int) } < 3 {
-            Err(Error::Unknown)
-        } else {
-            Ok(LoadAvg {
-                one: l[0],
-                five: l[1],
-                fifteen: l[2],
-            })
-        }
-    }
-    #[cfg(any(target_os = "windows"))]
-    {
-        Ok(unsafe { get_loadavg() })
-    }
-    #[cfg(not(any(
-        target_os = "linux",
-        target_os = "solaris",
-        target_os = "illumos",
-        target_vendor = "apple",
-        target_os = "windows",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd"
-    )))]
-    {
-        Err(Error::UnsupportedSystem)
-    }
 }
 
 /// Get current processes quantity.
 pub fn proc_total() -> Result<u64, Error> {
-    #[cfg(any(target_os = "solaris", target_os = "illumos"))]
-    {
-        Ok(kstat::nproc()?)
-    }
-    #[cfg(target_os = "linux")]
     {
         let mut s = String::new();
         File::open("/proc/loadavg")?.read_to_string(&mut s)?;
@@ -808,49 +214,12 @@ pub fn proc_total() -> Result<u64, Error> {
             .and_then(|val| val.parse::<u64>().ok())
             .ok_or(Error::Unknown)
     }
-    #[cfg(any(target_vendor = "apple", target_os = "windows", target_os = "haiku"))]
-    {
-        Ok(unsafe { get_proc_total() })
-    }
-    #[cfg(any(target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))]
-    {
-        let res: u64 = unsafe { get_proc_total() };
-        match res {
-            0 => Err(Error::IO(io::Error::last_os_error())),
-            _ => Ok(res),
-        }
-    }
-    #[cfg(not(any(
-        target_os = "linux",
-        target_os = "solaris",
-        target_os = "illumos",
-        target_vendor = "apple",
-        target_os = "windows",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd",
-        target_os = "haiku"
-    )))]
-    {
-        Err(Error::UnsupportedSystem)
-    }
-}
-
-#[cfg(any(target_os = "solaris", target_os = "illumos"))]
-fn pagesize() -> Result<u32, Error> {
-    let ret = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
-    if ret < 1 || ret > std::u32::MAX as i64 {
-        Err(Error::Unknown)
-    } else {
-        Ok(ret as u32)
-    }
 }
 
 /// Get memory information.
 ///
 /// On Mac OS X and Windows, the buffers and cached variables of the MemInfo returned are zero.
 pub fn mem_info() -> Result<MemInfo, Error> {
-    #[cfg(target_os = "linux")]
     {
         let mut s = String::new();
         File::open("/proc/meminfo")?.read_to_string(&mut s)?;
@@ -871,7 +240,8 @@ pub fn mem_info() -> Result<MemInfo, Error> {
         let cached = *meminfo_hashmap.get("Cached").ok_or(Error::Unknown)?;
         let avail = meminfo_hashmap
             .get("MemAvailable")
-            .map(|v| v.clone())
+            .copied()
+            //.map(|v| v.clone())
             .or_else(|| {
                 let sreclaimable = *meminfo_hashmap.get("SReclaimable")?;
                 let shmem = *meminfo_hashmap.get("Shmem")?;
@@ -890,111 +260,77 @@ pub fn mem_info() -> Result<MemInfo, Error> {
             swap_free,
         })
     }
-    #[cfg(any(target_os = "solaris", target_os = "illumos"))]
-    {
-        let pagesize = pagesize()? as u64;
-        let pages = kstat::pages()?;
-        return Ok(MemInfo {
-            total: pages.physmem * pagesize / 1024,
-            avail: 0,
-            free: pages.freemem * pagesize / 1024,
-            cached: 0,
-            buffers: 0,
-            swap_total: 0,
-            swap_free: 0,
-        });
-    }
-    #[cfg(any(target_vendor = "apple", target_os = "windows", target_os = "haiku"))]
-    {
-        Ok(unsafe { get_mem_info() })
-    }
-    #[cfg(any(target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))]
-    {
-        let mut mi: MemInfo = MemInfo {
-            total: 0,
-            free: 0,
-            avail: 0,
-            buffers: 0,
-            cached: 0,
-            swap_total: 0,
-            swap_free: 0,
-        };
-        let res: i32 = unsafe { get_mem_info_bsd(&mut mi) };
-        match res {
-            -1 => Err(Error::IO(io::Error::last_os_error())),
-            0 => Ok(mi),
-            _ => Err(Error::Unknown),
-        }
-    }
-    #[cfg(not(any(
-        target_os = "linux",
-        target_os = "solaris",
-        target_os = "illumos",
-        target_vendor = "apple",
-        target_os = "windows",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd",
-        target_os = "haiku"
-    )))]
-    {
-        Err(Error::UnsupportedSystem)
-    }
 }
 
+/// Disk information.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct DiskInfo {
+    //pub total: u64,
+    //pub free: u64,
+    pub name: String,
+}
 /// Get disk information.
 ///
 /// Notice, it just calculate current disk on Windows.
-pub fn disk_info() -> Result<DiskInfo, Error> {
-    #[cfg(any(
-        target_os = "linux",
-        target_vendor = "apple",
-        target_os = "windows",
-        target_os = "haiku"
-    ))]
-    {
-        Ok(unsafe { get_disk_info() })
-    }
-    #[cfg(any(target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))]
-    {
-        let mut di: DiskInfo = DiskInfo { total: 0, free: 0 };
-        let res: i32 = unsafe { get_disk_info_bsd(&mut di) };
-        match res {
-            -1 => Err(Error::IO(io::Error::last_os_error())),
-            0 => Ok(di),
-            _ => Err(Error::Unknown),
-        }
-    }
-    #[cfg(not(any(
-        target_os = "linux",
-        target_vendor = "apple",
-        target_os = "windows",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd",
-        target_os = "haiku"
-    )))]
-    {
-        Err(Error::UnsupportedSystem)
+/// PES use du -P
+pub fn disk_info_filtered() -> Result<Vec<DiskUsage>, Error> {
+    use std::process::Command;
+    let output = Command::new("/bin/df")
+        .arg("-Pk") //# -P Posix format, -k block-size=1K
+        .output() // wait collect output
+        .expect("failed to execute /bin/df");
+
+    assert!(output.status.success());
+    //println!("output.stdout: {}", String::from_utf8(&output.stdout).unwrap());
+    let a: Vec<DiskUsage> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|s| !{
+            ["Filesystem ", "tmpfs ", "shm ", "grpcfuse "]
+                .iter()
+                .any(|&x| s.contains(x))
+        })
+        .map(df_split)
+        .collect();
+    Ok(a)
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct DiskUsage {
+    path: String,
+    mb_used: u64,
+    mb_available: u64,
+    used_pct: u8,
+    fs: String,
+}
+fn df_split(s: &str) -> DiskUsage {
+    //vec![String,"a".to_string(),"b".to_string()]
+    //String { vec!["a".to_string(),"b".to_string()] }
+    let split: Vec<&str> = s
+        .split_whitespace()
+        //.map(|v| v.to_string())
+        .collect();
+
+    DiskUsage {
+        path: split[5].into(),
+        mb_used: split[2]
+            .parse::<u64>()
+            .expect("df 3rd column not a number ?")
+            / 1000,
+        mb_available: split[3]
+            .parse::<u64>()
+            .expect("df 4th column non a number ?")
+            / 1000,
+        used_pct: split[4]
+            .to_string()
+            .strip_suffix("%")
+            .expect("df 5th column no % sign ?")
+            .parse::<u8>()
+            .expect("df 5th column non number% ?"),
+        fs: split[0].into(),
     }
 }
 
 /// Get hostname.
-#[cfg(target_family = "unix")]
-pub fn hostname() -> Result<String, Error> {
-    unsafe {
-        let buf_size = libc::sysconf(libc::_SC_HOST_NAME_MAX) as usize;
-        let mut buf = Vec::<u8>::with_capacity(buf_size + 1);
-        if libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf_size) < 0 {
-            return Err(Error::IO(io::Error::last_os_error()));
-        }
-        let hostname_len = libc::strnlen(buf.as_ptr() as *const libc::c_char, buf_size);
-        buf.set_len(hostname_len);
-        Ok(ffi::CString::new(buf).unwrap().into_string().unwrap())
-    }
-}
-
-#[cfg(target_family = "windows")]
 pub fn hostname() -> Result<String, Error> {
     use std::process::Command;
     Command::new("hostname")
@@ -1004,81 +340,17 @@ pub fn hostname() -> Result<String, Error> {
 }
 
 /// Get system boottime
-#[cfg(not(windows))]
-pub fn boottime() -> Result<timeval, Error> {
-    let mut bt = timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    };
-
-    #[cfg(any(target_os = "linux", target_os = "android"))]
-    {
-        let mut s = String::new();
-        File::open("/proc/uptime")?.read_to_string(&mut s)?;
-        let secs = s
-            .trim()
-            .split(' ')
-            .take(2)
-            .map(|val| val.parse::<f64>().unwrap())
-            .collect::<Vec<f64>>();
-        bt.tv_sec = secs[0] as libc::time_t;
-        bt.tv_usec = secs[1] as libc::suseconds_t;
-        return Ok(bt);
-    }
-    #[cfg(any(
-        target_vendor = "apple",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd"
-    ))]
-    {
-        let mut mib = [OS_CTL_KERN, OS_KERN_BOOTTIME];
-        let mut size: libc::size_t = size_of_val(&bt) as libc::size_t;
-        unsafe {
-            if sysctl(
-                &mut mib[0],
-                2,
-                &mut bt as *mut timeval as *mut libc::c_void,
-                &mut size,
-                null_mut(),
-                0,
-            ) == -1
-            {
-                return Err(Error::IO(io::Error::last_os_error()));
-            } else {
-                return Ok(bt);
-            }
-        }
-    }
-    #[cfg(any(target_os = "solaris", target_os = "illumos"))]
-    {
-        let start = kstat::boot_time()?;
-        let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?;
-        let now = now.as_secs();
-        if now < start {
-            return Err(Error::General("time went backwards".into()));
-        }
-        bt.tv_sec = (now - start) as i64;
-        return Ok(bt);
-    }
-
-    #[cfg(target_os = "haiku")]
-    {
-        unsafe {
-            let mut sysinfo: libc::system_info = std::mem::zeroed();
-            if libc::get_system_info(&mut sysinfo) == libc::B_OK {
-                let mut now: libc::time_t = 0;
-                libc::time(&mut now);
-                bt.tv_sec = now - (sysinfo.boot_time / 1000000);
-                bt.tv_usec = (sysinfo.boot_time % 1000000) as libc::suseconds_t;
-                return Ok(bt);
-            }
-        }
-        return Err(Error::IO(io::Error::last_os_error()));
-    }
-
-    #[warn(unreachable_code)]
-    Err(Error::UnsupportedSystem)
+pub fn uptime() -> Result<u64, Error> {
+    let mut s = String::new();
+    //# Get 2 numbers system uptime and system idle time
+    File::open("/proc/uptime")?.read_to_string(&mut s)?;
+    let secs = s
+        .trim()
+        .split(' ')
+        .take(1)
+        .map(|val| val.parse::<f64>().unwrap())
+        .collect::<Vec<f64>>();
+    Ok(secs[0] as u64)
 }
 
 #[cfg(test)]
@@ -1132,13 +404,6 @@ mod test {
         let mem = mem_info().unwrap();
         assert!(mem.total > 0);
         println!("mem_info(): {:?}", mem);
-    }
-
-    #[test]
-    #[cfg(not(any(target_os = "solaris", target_os = "illumos")))]
-    pub fn test_disk_info() {
-        let info = disk_info().unwrap();
-        println!("disk_info(): {:?}", info);
     }
 
     #[test]
