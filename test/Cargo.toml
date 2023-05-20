@@ -1,11 +1,9 @@
 [package]
 
 name = "test"
-version = "0.0.1"
-authors = ["FillZpp <FillZpp.pub@gmail.com>"]
+version = "0.1.1"
+authors = ["Pieter Smit", "FillZpp <FillZpp.pub@gmail.com>"]
 
-[dependencies.sys-info]
+[dependencies.sys-info-rs]
 path = ".."
 version = "*"
-
-

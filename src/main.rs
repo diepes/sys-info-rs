@@ -23,7 +23,6 @@ fn main() {
     // println!("loadavg {:?}", sys_info_rs::loadavg().unwrap());
     let info_json = serde_json::json!(info); //.expect("Err not json.");
     println!("{}", info_json);
-
 }
 
 #[derive(Debug, serde::Serialize)]

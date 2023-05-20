@@ -5,7 +5,6 @@
 //! And now it can get information of cpu/memory/disk/load/hostname.
 //!
 
-mod util;
 extern crate nix;
 
 extern crate serde;
@@ -14,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use std::fmt;
 use std::fs::File;
-use std::io::{self, BufRead, Read};
+use std::io::{self, Read};
 
 use std::collections::HashMap;
 
@@ -43,10 +42,6 @@ pub struct MemInfo {
     /// Total swap memory.
     pub swap_total: u64,
     pub swap_free: u64,
-}
-
-fn get_cpu_speed() -> u64 {
-    4
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -111,73 +106,15 @@ impl From<io::Error> for Error {
     }
 }
 
-impl From<std::time::SystemTimeError> for Error {
-    fn from(e: std::time::SystemTimeError) -> Error {
-        Error::SystemTime(e)
-    }
-}
+//#impl From<std::time::SystemTimeError> for Error {
+//#    fn from(e: std::time::SystemTimeError) -> Error {
+//#        Error::SystemTime(e)
+//#    }
+//#}
 
 impl From<Box<dyn std::error::Error>> for Error {
     fn from(e: Box<dyn std::error::Error>) -> Error {
         Error::General(e.to_string())
-    }
-}
-
-/// Get operation system type.
-///
-/// Such as "Linux", "Darwin", "Windows".
-pub fn os_type() -> Result<String, Error> {
-    #[cfg(target_os = "linux")]
-    {
-        let mut s = String::new();
-        File::open("/proc/sys/kernel/ostype")?.read_to_string(&mut s)?;
-        s.pop(); // pop '\n'
-        Ok(s)
-    }
-
-    #[cfg(not(any(target_os = "linux",)))]
-    {
-        Err(Error::UnsupportedSystem)
-    }
-}
-
-/// Get operation system release version.
-///
-/// Such as "3.19.0-gentoo"
-pub fn os_release() -> Result<String, Error> {
-    #[cfg(target_os = "linux")]
-    {
-        let mut s = String::new();
-        File::open("/proc/sys/kernel/osrelease")?.read_to_string(&mut s)?;
-        s.pop(); // pop '\n'
-        Ok(s)
-    }
-
-    #[cfg(not(any(target_os = "linux",)))]
-    {
-        Err(Error::UnsupportedSystem)
-    }
-}
-///
-/// Such as 2500, that is 2500 MHz.
-pub fn cpu_speed() -> Result<u64, Error> {
-    {
-        // /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_cur_freq
-        let mut s = String::new();
-        File::open("/proc/cpuinfo")?.read_to_string(&mut s)?;
-
-        let find_cpu_mhz = s.split('\n').find(|line| {
-            line.starts_with("cpu MHz\t")
-                || line.starts_with("BogoMIPS")
-                || line.starts_with("clock\t")
-                || line.starts_with("bogomips per cpu")
-        });
-
-        find_cpu_mhz
-            .and_then(|line| line.split(':').last())
-            .and_then(|val| val.replace("MHz", "").trim().parse::<f64>().ok())
-            .map(|speed| speed as u64)
-            .ok_or(Error::Unknown)
     }
 }
 
@@ -208,7 +145,7 @@ pub fn proc_total() -> Result<u64, Error> {
     {
         let mut s = String::new();
         File::open("/proc/loadavg")?.read_to_string(&mut s)?;
-        s.split(' ')
+        s.split_whitespace()
             .nth(3)
             .and_then(|val| val.split('/').last())
             .and_then(|val| val.parse::<u64>().ok())
@@ -358,35 +295,6 @@ mod test {
     use super::*;
 
     #[test]
-    pub fn test_os_type() {
-        let typ = os_type().unwrap();
-        assert!(typ.len() > 0);
-        println!("os_type(): {}", typ);
-    }
-
-    #[test]
-    pub fn test_os_release() {
-        let release = os_release().unwrap();
-        assert!(release.len() > 0);
-        println!("os_release(): {}", release);
-    }
-
-    #[test]
-    pub fn test_cpu_num() {
-        let num = cpu_num().unwrap();
-        assert!(num > 0);
-        println!("cpu_num(): {}", num);
-    }
-
-    #[test]
-    #[cfg(not(all(target_vendor = "apple", target_arch = "aarch64")))]
-    pub fn test_cpu_speed() {
-        let speed = cpu_speed().unwrap();
-        assert!(speed > 0);
-        println!("cpu_speed(): {}", speed);
-    }
-
-    #[test]
     pub fn test_loadavg() {
         let load = loadavg().unwrap();
         println!("loadavg(): {:?}", load);
@@ -414,17 +322,9 @@ mod test {
     }
 
     #[test]
-    #[cfg(not(windows))]
-    pub fn test_boottime() {
-        let bt = boottime().unwrap();
-        println!("boottime(): {} {}", bt.tv_sec, bt.tv_usec);
-        assert!(bt.tv_sec > 0 || bt.tv_usec > 0);
-    }
-
-    #[test]
-    #[cfg(target_os = "linux")]
-    pub fn test_linux_os_release() {
-        let os_release = linux_os_release().unwrap();
-        println!("linux_os_release(): {:?}", os_release.name)
+    pub fn test_uptime() {
+        let bt = uptime().unwrap();
+        println!("uptime(): {}", bt);
+        assert!(bt > 0);
     }
 }

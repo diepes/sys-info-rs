@@ -1,14 +1,11 @@
 
-extern crate sys_info;
+extern crate sys_info_rs;
 
-use sys_info::*;
+use sys_info_rs::*;
 
 fn main() {
 
-    println!("os: {} {}", os_type().unwrap(), os_release().unwrap());
-    println!("cpu: {} cores, {} MHz", cpu_num().unwrap(), cpu_speed().unwrap());
-    println!("proc total: {}", proc_total().unwrap());
-    let load = loadavg().unwrap();
+    let load = LoadAvg().unwrap();
     println!("load: {} {} {}", load.one, load.five, load.fifteen);
     let mem = mem_info().unwrap();
     println!("mem: total {} KB, free {} KB, avail {} KB, buffers {} KB, cached {} KB",
@@ -23,7 +20,4 @@ fn main() {
         let t = boottime().unwrap();
         println!("boottime {} sec, {} usec", t.tv_sec, t.tv_usec);
     }
-    #[cfg(target_os = "linux")]
-    println!("/etc/os-release: {:?}", linux_os_release().unwrap());
 }
-
